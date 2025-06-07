@@ -220,21 +220,22 @@ namespace MQTT {
         // 存储每个topic的最新消息
         const latestMessages: LatestMessagesMap = {};
 
-        while (receivedMessage.includes("+MQTTSUBRECV")) {
-            const firstIndex = receivedMessage.indexOf("+MQTTSUBRECV");
-            const sencondIndex = receivedMessage.indexOf("+MQTTSUBRECV", firstIndex + 1);
-            let subMessage = receivedMessage.slice(firstIndex, sencondIndex);
-            subMessage = subMessage.split(":").join(",");
-            const parts = subMessage.split(",");
+        while (receivedMessage.includes("+MQTTSUBRECV:")) {
+            const firstIndex = receivedMessage.indexOf("+MQTTSUBRECV:");
+            const nextNewLine = receivedMessage.indexOf("\n", firstIndex);
+            const endIndex = nextNewLine !== -1 ? nextNewLine : receivedMessage.length;
+            let subMessage = receivedMessage.slice(firstIndex, endIndex);
 
-            if (parts.length == 3 && parts[0].includes("+MQTTSUBRECV")) {
-                const topic = parts[1];
-                const message = parts[2];
+            if (subMessage.includes("+MQTTSUBRECV")) {
+                const firstColon = subMessage.indexOf(":");
+                const firstComma = subMessage.indexOf(",");
+                const topic = subMessage.slice(firstColon + 1, firstComma);
+                const message = subMessage.slice(firstComma + 1);
                 // 只保存每个topic的最新消息
                 latestMessages[topic] = message;
             }
 
-            receivedMessage = receivedMessage.slice(sencondIndex);
+            receivedMessage = receivedMessage.slice(nextNewLine + 1);
         }
 
         // 处理每个topic的最新消息
