@@ -1,6 +1,6 @@
 {
-    "name": "HTERobot",
-    "version": "2.4.1",
+    "name": "MQTT",
+    "version": "0.0.1",
     "description": "Extension for DouBao:Bit",
     "license": "MIT",
     "dependencies": {
