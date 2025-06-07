@@ -59,6 +59,7 @@ namespace MQTT {
         serial.setTxBufferSize(128);
         serial.setRxBufferSize(128);
         // 简单验证，发送 AT 指令并检查返回结果
+        receivedMessage = "";
         sendATCommand("AT");
         basic.pause(500);
         if (receivedMessage.includes("OK")) {
@@ -98,9 +99,10 @@ namespace MQTT {
         sendATCommand(`AT+CWJAP="${wifiSSID}","${wifiPassword}"`);
         basic.pause(6000);
         // 检查是否连接成功
+        receivedMessage = "";
         sendATCommand("AT+CWJAP?");
         basic.pause(1000);
-        wifiInitialized = receivedMessage.includes(wifiSSID)
+        wifiInitialized = receivedMessage.includes("OK")
     }
 
     /**
@@ -135,9 +137,11 @@ namespace MQTT {
         mqttPassword = password;
         mqttServer = server;
         mqttPort = port;
+        receivedMessage = "";
         sendATCommand(`AT+MQTTUSERCFG=0,1,"${mqttClientID}","${mqttUsername}","${mqttPassword}",0,0,""`);
         basic.pause(2000);
         mqttInitialized = receivedMessage.includes("OK")
+        receivedMessage = "";
         sendATCommand(`AT+MQTTCONN=0,"${mqttServer}",${mqttPort},1`);
         basic.pause(2000);
         mqttInitialized = mqttInitialized && receivedMessage.includes("OK");
