@@ -15,6 +15,7 @@ const mqttSubscribeHandlers: { [topic: string]: (message: string) => void } = {}
 let serialInitialized = MQTT_BOOL_TYPE_IS_FALSE;
 let wifiInitialized = MQTT_BOOL_TYPE_IS_FALSE;
 let mqttInitialized = MQTT_BOOL_TYPE_IS_FALSE;
+let initState = MQTT_BOOL_TYPE_IS_TRUE;
 let serialTX: SerialPin = SerialPin.P2;
 let serialRX: SerialPin = SerialPin.P1;
 let serialBaudRate = 115200;
@@ -59,6 +60,7 @@ namespace MQTT {
         serial.setTxBufferSize(128);
         serial.setRxBufferSize(128);
         // 简单验证，发送 AT 指令并检查返回结果
+        initState = MQTT_BOOL_TYPE_IS_TRUE;
         receivedMessage = "";
         sendATCommand("AT");
         basic.pause(500);
@@ -66,6 +68,7 @@ namespace MQTT {
             serialInitialized = MQTT_BOOL_TYPE_IS_TRUE;
             receivedMessage = ""; // 清空消息
         }
+        initState = MQTT_BOOL_TYPE_IS_FALSE;
     }
 
     /**
@@ -99,10 +102,12 @@ namespace MQTT {
         sendATCommand(`AT+CWJAP="${wifiSSID}","${wifiPassword}"`);
         basic.pause(6000);
         // 检查是否连接成功
+        initState = MQTT_BOOL_TYPE_IS_TRUE;
         receivedMessage = "";
         sendATCommand("AT+CWJAP?");
         basic.pause(1000);
         wifiInitialized = receivedMessage.includes("OK")
+        initState = MQTT_BOOL_TYPE_IS_FALSE;
     }
 
     /**
@@ -137,6 +142,7 @@ namespace MQTT {
         mqttPassword = password;
         mqttServer = server;
         mqttPort = port;
+        initState = MQTT_BOOL_TYPE_IS_TRUE;
         receivedMessage = "";
         sendATCommand(`AT+MQTTUSERCFG=0,1,"${mqttClientID}","${mqttUsername}","${mqttPassword}",0,0,""`);
         basic.pause(2000);
@@ -145,6 +151,7 @@ namespace MQTT {
         sendATCommand(`AT+MQTTCONN=0,"${mqttServer}",${mqttPort},1`);
         basic.pause(2000);
         mqttInitialized = mqttInitialized && receivedMessage.includes("OK");
+        initState = MQTT_BOOL_TYPE_IS_FALSE;
     }
 
     /**
@@ -213,16 +220,44 @@ namespace MQTT {
         serial.writeString(command + "\r\n");
     }
 
+    /**
+ * 将字符串转换为字节数组（简单 ASCII 范围）
+ * @param str 输入字符串
+ * @returns 字节数组
+ */
+    function stringToBytes(str: string): number[] {
+        const bytes: number[] = [];
+
+        for (let i = 0; i < str.length; i++) {
+            // 获取字符的 Unicode 编码值
+            const charCode = str.charCodeAt(i);
+
+            // 只处理 ASCII 范围内的字符（0-127）
+            // 对于 UTF-8 多字节字符，需要更复杂的处理
+            bytes.push(charCode & 0xFF);
+        }
+
+        return bytes;
+    }
+
     // 处理接收到的串口数据
     serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
-        receivedMessage += serial.readString();
+        // receivedMessage += serial.readString();
+        let bytes: number[] = [];
+        let str = serial.readString();
+        for (let i = 0; i < str.length; i++) {
+            bytes.push(str.charCodeAt(i));
+        }
+
+        const decodedMessage = advancedUtf8Decode(bytes);
+        receivedMessage += decodedMessage;
 
         // 存储每个topic的最新消息
         const latestMessages: LatestMessagesMap = {};
 
         while (receivedMessage.includes("+MQTTSUBRECV:")) {
             const firstIndex = receivedMessage.indexOf("+MQTTSUBRECV:");
-            const nextNewLine = receivedMessage.indexOf("\n", firstIndex);
+            const nextNewLine = receivedMessage.indexOf("\r\n", firstIndex);
             const endIndex = nextNewLine !== -1 ? nextNewLine : receivedMessage.length;
             let subMessage = receivedMessage.slice(firstIndex, endIndex);
 
@@ -246,5 +281,58 @@ namespace MQTT {
                 mqttSubscribeHandlers[topic](latestMessages[topic]);
             }
         }
+        // 清空缓冲区，避免无限增长
+        if (!initState) {
+            receivedMessage = "";
+        }
     });
+
+    /**
+     * UTF-8解码，支持更多字符
+     */
+    function advancedUtf8Decode(bytes: number[]): string {
+        let result = "";
+        let i = 0;
+        const length = bytes.length;
+
+        while (i < length) {
+            const byte = bytes[i];
+
+            // 单字节ASCII
+            if ((byte & 0x80) === 0) {
+                result += String.fromCharCode(byte);
+                i++;
+            }
+            // 双字节UTF-8
+            else if ((byte & 0xE0) === 0xC0 && i + 1 < length) {
+                const codePoint = ((byte & 0x1F) << 6) | (bytes[i + 1] & 0x3F);
+                result += String.fromCharCode(codePoint);
+                i += 2;
+            }
+            // 三字节UTF-8（中文）
+            else if ((byte & 0xF0) === 0xE0 && i + 2 < length) {
+                const codePoint = ((byte & 0x0F) << 12) |
+                    ((bytes[i + 1] & 0x3F) << 6) |
+                    (bytes[i + 2] & 0x3F);
+                result += String.fromCharCode(codePoint);
+                i += 3;
+            }
+            // 四字节UTF-8（表情符号等）
+            else if ((byte & 0xF8) === 0xF0 && i + 3 < length) {
+                const codePoint = ((byte & 0x07) << 18) |
+                    ((bytes[i + 1] & 0x3F) << 12) |
+                    ((bytes[i + 2] & 0x3F) << 6) |
+                    (bytes[i + 3] & 0x3F);
+                result += String.fromCharCode(codePoint);
+                i += 4;
+            }
+            // 无效字节
+            else {
+                result += "?";
+                i++;
+            }
+        }
+
+        return result;
+    }
 }
