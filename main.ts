@@ -220,26 +220,6 @@ namespace MQTT {
         serial.writeString(command + "\r\n");
     }
 
-    /**
- * 将字符串转换为字节数组（简单 ASCII 范围）
- * @param str 输入字符串
- * @returns 字节数组
- */
-    function stringToBytes(str: string): number[] {
-        const bytes: number[] = [];
-
-        for (let i = 0; i < str.length; i++) {
-            // 获取字符的 Unicode 编码值
-            const charCode = str.charCodeAt(i);
-
-            // 只处理 ASCII 范围内的字符（0-127）
-            // 对于 UTF-8 多字节字符，需要更复杂的处理
-            bytes.push(charCode & 0xFF);
-        }
-
-        return bytes;
-    }
-
     // 处理接收到的串口数据
     serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
         // receivedMessage += serial.readString();
